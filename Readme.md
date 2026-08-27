@@ -22,3 +22,6 @@ Move the two image the build folder
 
 How to run
 
+```bash
+./TestLineMatchingAlgorithm img1.jpg img2.jpg
+```
