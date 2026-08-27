@@ -42,184 +42,468 @@ the use of this software, even if advised of the possibility of such damage.
 */
 
 
-#include <math.h>
-#include <time.h>
-#include <fstream>
+#include <cmath>
+#include <ctime>
+#include <cstdlib>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <algorithm>
 
+#include <opencv2/opencv.hpp>
 
 #include "LineDescriptor.hh"
-
 
 using namespace std;
 
 
-void usage(int argc, char** argv){
-	cout<<"Usage: "<<argv[0]<<"  image1.png"<<"  image2.png"<<endl;
+void usage(int argc, char** argv)
+{
+    cout << "Usage: " << argv[0] << " image1.png image2.png" << endl;
 }
 
 
 int main(int argc, char** argv)
 {
-	int ret = -1;
-	if(argc<3){
-		usage(argc,argv);
-		return ret;
-	}
-  //load first image from file
-	std::string imageName1(argv[1]);
-	cv::Mat leftImage;
-    leftImage = imread(imageName1, cv::IMREAD_GRAYSCALE);   // Read the file
-    if(! leftImage.data )                              // Check for invalid input
+    if (argc < 3)
     {
-        cout <<  "Could not open or find the image" << std::endl ;
+        usage(argc, argv);
         return -1;
     }
 
-  //load second image from file
-	std::string imageName2(argv[2]);
-	
-    cv::Mat rightImage;
-    rightImage = imread(imageName2, cv::IMREAD_GRAYSCALE);   // Read the file
-    if(! rightImage.data )                              // Check for invalid input
+
+    // =========================================================================
+    // Load images
+    // =========================================================================
+
+    const std::string imageName1(argv[1]);
+    const std::string imageName2(argv[2]);
+
+    cv::Mat leftImage =
+        cv::imread(imageName1, cv::IMREAD_GRAYSCALE);
+
+    cv::Mat rightImage =
+        cv::imread(imageName2, cv::IMREAD_GRAYSCALE);
+
+
+    if (leftImage.empty())
     {
-        cout <<  "Could not open or find the image" << std::endl ;
+        cerr << "Could not open or find image: "
+             << imageName1 << endl;
         return -1;
     }
 
-	unsigned int imageWidth  = leftImage.cols;
-	unsigned int imageHeight = leftImage.rows;
-
-	srand((unsigned)time(0));
-	int lowest=100, highest=255;
-	int range=(highest-lowest)+1;
-	unsigned int r, g, b; //the color of lines
-
-	//initial variables
-	cv::Mat leftColorImage(leftImage.size(), CV_8UC3);
-	cv::Mat rightColorImage(rightImage.size(), CV_8UC3);
-	
-	cvtColor( leftImage, leftColorImage,  cv::COLOR_GRAY2RGB );
-	cvtColor( rightImage, rightColorImage, cv::COLOR_GRAY2RGB );
+    if (rightImage.empty())
+    {
+        cerr << "Could not open or find image: "
+             << imageName2 << endl;
+        return -1;
+    }
 
 
-  ///////////####################################################################
-  ///////////####################################################################
-	//extract lines, compute their descriptors and match lines
-	LineDescriptor lineDesc;
-//	PairwiseLineMatching lineMatch;
+    // =========================================================================
+    // Create color copies for visualization
+    // =========================================================================
 
-	ScaleLines   linesInLeft;
-	ScaleLines   linesInRight;
-	std::vector<unsigned int> matchResult;
+    cv::Mat leftColorImage;
+    cv::Mat rightColorImage;
+
+    cv::cvtColor(
+        leftImage,
+        leftColorImage,
+        cv::COLOR_GRAY2BGR
+    );
+
+    cv::cvtColor(
+        rightImage,
+        rightColorImage,
+        cv::COLOR_GRAY2BGR
+    );
 
 
-	lineDesc.GetLineDescriptor(leftImage,linesInLeft);
-	lineDesc.GetLineDescriptor(rightImage,linesInRight);
-	
-	//TODO remove BIAS dependecies in PairwiseMatching
-//	lineMatch.LineMatching(linesInLeft,linesInRight,matchResult);
+    // =========================================================================
+    // Detect lines + compute LBD descriptors
+    // =========================================================================
 
-  ///////////####################################################################
-  ///////////####################################################################
-	//draw  extracted lines into images
-	cv::Point startPoint;
-	cv::Point endPoint;
-	cv::Point point;
+    LineDescriptor lineDesc;
 
-	for(unsigned int i=0; i<linesInLeft.size(); i++){
-		r = lowest+int(rand()%range);
-		g = lowest+int(rand()%range);
-		b = lowest+int(rand()%range);
-		startPoint = cv::Point(int(linesInLeft[i][0].startPointX),int(linesInLeft[i][0].startPointY));
-		endPoint   = cv::Point(int(linesInLeft[i][0].endPointX),  int(linesInLeft[i][0].endPointY));
-		cv::line( leftColorImage,startPoint,endPoint,cv::Scalar(r,g,b));
-//		char buf[10];
-//		sprintf( buf,   "%d ",  i);
-//		if(i%2){
-//			point = cvPoint(round(0.75*startPoint.x+0.25*endPoint.x),round(0.75*startPoint.y+0.25*endPoint.y));
-//			cvPutText(cvLeftColorImage,buf,point,&font,CV_RGB(r,g,b));
-//		}else{
-//			point = cvPoint(round(0.25*startPoint.x+0.75*endPoint.x),round(0.25*startPoint.y+0.75*endPoint.y));
-//			cvPutText(cvLeftColorImage,buf,point,&font,CV_RGB(r,g,b));
-//		}
-	}
-	for(unsigned int i=0; i<linesInRight.size(); i++){
-		r = lowest+int(rand()%range);
-		g = lowest+int(rand()%range);
-		b = lowest+int(rand()%range);
-		startPoint = cv::Point(int(linesInRight[i][0].startPointX),int(linesInRight[i][0].startPointY));
-		endPoint   = cv::Point(int(linesInRight[i][0].endPointX),  int(linesInRight[i][0].endPointY));
-		cv::line( rightColorImage,startPoint,endPoint,cv::Scalar(r,g,b));
-//		char buf[10];
-//		sprintf( buf,   "%d ",  i);
-//		if(i%2){
-//			point = cvPoint(round(0.75*startPoint.x+0.25*endPoint.x),round(0.75*startPoint.y+0.25*endPoint.y));
-//			cvPutText(cvRightColorImage,buf,point,&font,CV_RGB(r,g,b));
-//		}else{
-//			point = cvPoint(round(0.25*startPoint.x+0.75*endPoint.x),round(0.25*startPoint.y+0.75*endPoint.y));
-//			cvPutText(cvRightColorImage,buf,point,&font,CV_RGB(r,g,b));
-//		}
-	}
-	imwrite("LinesInImage1.png",leftColorImage);
-	imwrite("LinesInImage2.png",rightColorImage);
-	//TODO enable after BIAS dependecies in PairwiseMatching have been removed
-//  ///////////####################################################################
-//  ///////////####################################################################
-//  //store the matching results of the first and second images into a single image
-//	double ww1,ww2;
-//	int lineIDLeft;
-//	int lineIDRight;
-//	cvCvtColor( cvLeftImage, cvLeftColorImage,  CV_GRAY2RGB );
-//	cvCvtColor( cvRightImage,cvRightColorImage, CV_GRAY2RGB );
-//	int lowest1=0, highest1=255;
-//	int range1=(highest1-lowest1)+1;
-//	std::vector<unsigned int> r1(matchResult.size()/2), g1(matchResult.size()/2), b1(matchResult.size()/2); //the color of lines
-//	for(unsigned int pair=0; pair<matchResult.size()/2;pair++){
-//		r1[pair] = lowest1+int(rand()%range1);
-//		g1[pair] = lowest1+int(rand()%range1);
-//		b1[pair] = 255 - r1[pair];
-//		ww1 = 0.2*(rand()%5);
-//		ww2 = 1 - ww1;
-//		char buf[10];
-//		sprintf( buf,   "%d ",  pair);
-//		lineIDLeft = matchResult[2*pair];
-//		lineIDRight= matchResult[2*pair+1];
-//		startPoint = cvPoint(int(linesInLeft[lineIDLeft][0].startPointX),int(linesInLeft[lineIDLeft][0].startPointY));
-//		endPoint   = cvPoint(int(linesInLeft[lineIDLeft][0].endPointX),  int(linesInLeft[lineIDLeft][0].endPointY));
-//		cvLine( cvLeftColorImage,startPoint,endPoint,CV_RGB(r1[pair],g1[pair],b1[pair]),4, CV_AA);
-//		startPoint = cvPoint(int(linesInRight[lineIDRight][0].startPointX),int(linesInRight[lineIDRight][0].startPointY));
-//		endPoint   = cvPoint(int(linesInRight[lineIDRight][0].endPointX),  int(linesInRight[lineIDRight][0].endPointY));
-//		cvLine( cvRightColorImage,startPoint,endPoint,CV_RGB(r1[pair],g1[pair],b1[pair]),4, CV_AA);
-//	}
-//
-//	IplImage *cvResultColorImage1 = cvCreateImage(cvSize(imageWidth*2,imageHeight),IPL_DEPTH_8U, 3);
-//	IplImage *cvResultColorImage2 = cvCreateImage(cvSize(imageWidth*2,imageHeight),IPL_DEPTH_8U, 3);
-//	IplImage *cvResultColorImage = cvCreateImage(cvSize(imageWidth*2,imageHeight),IPL_DEPTH_8U, 3);
-//	cvSetImageROI(cvResultColorImage1, cvRect(0, 0, imageWidth-1, imageHeight-1));
-//	cvResize(cvLeftColorImage, cvResultColorImage1);
-//	cvResetImageROI(cvResultColorImage1);
-//	cvSetImageROI(cvResultColorImage1, cvRect(imageWidth, 0, imageWidth*2-1, imageHeight-1));
-//	cvResize(cvRightColorImage, cvResultColorImage1);
-//	cvResetImageROI(cvResultColorImage1);
-//	cvCopy(cvResultColorImage1,cvResultColorImage2);
-//	for(unsigned int pair=0; pair<matchResult.size()/2;pair++){
-//		lineIDLeft = matchResult[2*pair];
-//		lineIDRight= matchResult[2*pair+1];
-//		startPoint = cvPoint(int(linesInLeft[lineIDLeft][0].startPointX),int(linesInLeft[lineIDLeft][0].startPointY));
-//		endPoint   = cvPoint(int(linesInRight[lineIDRight][0].startPointX+imageWidth),int(linesInRight[lineIDRight][0].startPointY));
-//		cvLine( cvResultColorImage2,startPoint,endPoint,CV_RGB(r1[pair],g1[pair],b1[pair]),2, CV_AA);
-//	}
-//	cvAddWeighted( cvResultColorImage1, 0.5, cvResultColorImage2, 0.5, 0.0, cvResultColorImage);
-//
-//	cvSaveImage("LBDSG.png",cvResultColorImage);
-//	cvReleaseImage(&cvResultColorImage);
-//	cvReleaseImage(&cvResultColorImage1);
-//	cvReleaseImage(&cvResultColorImage2);
-//	cvReleaseImage(&cvLeftImage);
-//	cvReleaseImage(&cvRightImage);
-//	cvReleaseImage(&cvLeftColorImage);
-//	cvReleaseImage(&cvRightColorImage);
-//	cout<<"number of total matches = "<<matchResult.size()/2<<endl;
-  ///////////####################################################################
-  ///////////####################################################################
+    ScaleLines linesInLeft;
+    ScaleLines linesInRight;
+
+    std::vector<short> matchLeft;
+    std::vector<short> matchRight;
+
+
+    if (lineDesc.GetLineDescriptor(
+            leftImage,
+            linesInLeft) < 0)
+    {
+        cerr << "Failed to process left image." << endl;
+        return -1;
+    }
+
+
+    if (lineDesc.GetLineDescriptor(
+            rightImage,
+            linesInRight) < 0)
+    {
+        cerr << "Failed to process right image." << endl;
+        return -1;
+    }
+
+
+    if (linesInLeft.empty() || linesInRight.empty())
+    {
+        cerr << "No lines detected in one or both images." << endl;
+        return -1;
+    }
+
+
+    // =========================================================================
+    // Match the LBD descriptors
+    // =========================================================================
+
+    if (lineDesc.MatchLineByDescriptor(
+            linesInLeft,
+            linesInRight,
+            matchLeft,
+            matchRight,
+            LineDescriptor::NearestNeighbor) < 0)
+    {
+        cerr << "Line matching failed." << endl;
+        return -1;
+    }
+
+
+    const std::size_t numberOfMatches =
+        std::min(matchLeft.size(), matchRight.size());
+
+
+    cout << "Number of matched lines: "
+         << numberOfMatches
+         << endl;
+
+
+    // =========================================================================
+    // Draw all detected lines
+    // =========================================================================
+
+    cv::RNG rngDetected(1234);
+
+
+    for (std::size_t i = 0;
+         i < linesInLeft.size();
+         ++i)
+    {
+        if (linesInLeft[i].empty())
+            continue;
+
+        const cv::Scalar color(
+            rngDetected.uniform(100, 255),
+            rngDetected.uniform(100, 255),
+            rngDetected.uniform(100, 255)
+        );
+
+        const cv::Point startPoint(
+            cvRound(linesInLeft[i][0].startPointX),
+            cvRound(linesInLeft[i][0].startPointY)
+        );
+
+        const cv::Point endPoint(
+            cvRound(linesInLeft[i][0].endPointX),
+            cvRound(linesInLeft[i][0].endPointY)
+        );
+
+        cv::line(
+            leftColorImage,
+            startPoint,
+            endPoint,
+            color,
+            2,
+            cv::LINE_AA
+        );
+    }
+
+
+    for (std::size_t i = 0;
+         i < linesInRight.size();
+         ++i)
+    {
+        if (linesInRight[i].empty())
+            continue;
+
+        const cv::Scalar color(
+            rngDetected.uniform(100, 255),
+            rngDetected.uniform(100, 255),
+            rngDetected.uniform(100, 255)
+        );
+
+        const cv::Point startPoint(
+            cvRound(linesInRight[i][0].startPointX),
+            cvRound(linesInRight[i][0].startPointY)
+        );
+
+        const cv::Point endPoint(
+            cvRound(linesInRight[i][0].endPointX),
+            cvRound(linesInRight[i][0].endPointY)
+        );
+
+        cv::line(
+            rightColorImage,
+            startPoint,
+            endPoint,
+            color,
+            2,
+            cv::LINE_AA
+        );
+    }
+
+
+    cv::imwrite(
+        "LinesInImage1.png",
+        leftColorImage
+    );
+
+    cv::imwrite(
+        "LinesInImage2.png",
+        rightColorImage
+    );
+
+
+    // =========================================================================
+    // Build side-by-side matching visualization
+    // =========================================================================
+
+    cv::Mat leftMatchImage;
+    cv::Mat rightMatchImage;
+
+    cv::cvtColor(
+        leftImage,
+        leftMatchImage,
+        cv::COLOR_GRAY2BGR
+    );
+
+    cv::cvtColor(
+        rightImage,
+        rightMatchImage,
+        cv::COLOR_GRAY2BGR
+    );
+
+
+    const int outputHeight =
+        std::max(
+            leftMatchImage.rows,
+            rightMatchImage.rows
+        );
+
+    const int outputWidth =
+        leftMatchImage.cols
+        +
+        rightMatchImage.cols;
+
+
+    cv::Mat resultImage(
+        outputHeight,
+        outputWidth,
+        CV_8UC3,
+        cv::Scalar(0, 0, 0)
+    );
+
+
+    leftMatchImage.copyTo(
+        resultImage(
+            cv::Rect(
+                0,
+                0,
+                leftMatchImage.cols,
+                leftMatchImage.rows
+            )
+        )
+    );
+
+
+    rightMatchImage.copyTo(
+        resultImage(
+            cv::Rect(
+                leftMatchImage.cols,
+                0,
+                rightMatchImage.cols,
+                rightMatchImage.rows
+            )
+        )
+    );
+
+
+    // =========================================================================
+    // Draw matched lines and match connections
+    // =========================================================================
+
+    cv::RNG rngMatches(12345);
+
+
+    for (std::size_t pair = 0;
+         pair < numberOfMatches;
+         ++pair)
+    {
+        const int lineIDLeft =
+            static_cast<int>(matchLeft[pair]);
+
+        const int lineIDRight =
+            static_cast<int>(matchRight[pair]);
+
+
+        if (lineIDLeft < 0 ||
+            lineIDRight < 0 ||
+            lineIDLeft >= static_cast<int>(linesInLeft.size()) ||
+            lineIDRight >= static_cast<int>(linesInRight.size()))
+        {
+            continue;
+        }
+
+
+        if (linesInLeft[lineIDLeft].empty() ||
+            linesInRight[lineIDRight].empty())
+        {
+            continue;
+        }
+
+
+        const cv::Scalar color(
+            rngMatches.uniform(50, 255),
+            rngMatches.uniform(50, 255),
+            rngMatches.uniform(50, 255)
+        );
+
+
+        // Left matched line
+        const cv::Point leftStart(
+            cvRound(linesInLeft[lineIDLeft][0].startPointX),
+            cvRound(linesInLeft[lineIDLeft][0].startPointY)
+        );
+
+        const cv::Point leftEnd(
+            cvRound(linesInLeft[lineIDLeft][0].endPointX),
+            cvRound(linesInLeft[lineIDLeft][0].endPointY)
+        );
+
+
+        // Right matched line, shifted horizontally
+        const cv::Point rightStart(
+            cvRound(linesInRight[lineIDRight][0].startPointX)
+                + leftMatchImage.cols,
+            cvRound(linesInRight[lineIDRight][0].startPointY)
+        );
+
+        const cv::Point rightEnd(
+            cvRound(linesInRight[lineIDRight][0].endPointX)
+                + leftMatchImage.cols,
+            cvRound(linesInRight[lineIDRight][0].endPointY)
+        );
+
+
+        cv::line(
+            resultImage,
+            leftStart,
+            leftEnd,
+            color,
+            3,
+            cv::LINE_AA
+        );
+
+
+        cv::line(
+            resultImage,
+            rightStart,
+            rightEnd,
+            color,
+            3,
+            cv::LINE_AA
+        );
+
+
+        // Connect line midpoints
+        const cv::Point leftMiddle(
+            (leftStart.x + leftEnd.x) / 2,
+            (leftStart.y + leftEnd.y) / 2
+        );
+
+        const cv::Point rightMiddle(
+            (rightStart.x + rightEnd.x) / 2,
+            (rightStart.y + rightEnd.y) / 2
+        );
+
+
+        cv::line(
+            resultImage,
+            leftMiddle,
+            rightMiddle,
+            color,
+            1,
+            cv::LINE_AA
+        );
+
+
+        // Match number
+        const std::string label =
+            std::to_string(pair);
+
+
+        cv::putText(
+            resultImage,
+            label,
+            leftMiddle,
+            cv::FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            1,
+            cv::LINE_AA
+        );
+
+
+        cv::putText(
+            resultImage,
+            label,
+            rightMiddle,
+            cv::FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            1,
+            cv::LINE_AA
+        );
+    }
+
+
+    // =========================================================================
+    // Save results
+    // =========================================================================
+
+    cv::imwrite(
+        "LBD_matches.png",
+        resultImage
+    );
+
+
+    cout << "Saved: LinesInImage1.png" << endl;
+    cout << "Saved: LinesInImage2.png" << endl;
+    cout << "Saved: LBD_matches.png" << endl;
+
+    cout << "Number of total matches = "
+         << numberOfMatches
+         << endl;
+
+
+    // =========================================================================
+    // Display
+    // =========================================================================
+
+    cv::imshow(
+        "LBD Line Matches",
+        resultImage
+    );
+
+    cout << "Press any key in the image window to exit." << endl;
+
+    cv::waitKey(0);
+
+    return 0;
 }
