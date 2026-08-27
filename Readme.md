@@ -2,7 +2,7 @@ how to build
 
 
 
-bash```
+```bash
 mkdir build
 
 
