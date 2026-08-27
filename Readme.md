@@ -12,3 +12,13 @@ cd build
 cmake ..
 make
 ```
+The image directory creation:
+
+```bash
+cd build
+```
+
+Move the two image the build folder
+
+How to run
+
