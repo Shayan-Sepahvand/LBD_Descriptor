@@ -41,6 +41,7 @@ or tort (including negligence or otherwise) arising in any way out of
 the use of this software, even if advised of the possibility of such damage.
 */
 
+#include <algorithm>
 #include "LineDescriptor.hh"
 
 #define SalienceScale 0.9//0.9
@@ -134,6 +135,9 @@ LineDescriptor::~LineDescriptor(){
 int LineDescriptor::OctaveKeyLines(cv::Mat & image, ScaleLines &keyLines)
 {
 	unsigned int numOfFinalLine = 0;
+
+	// Work on a local image pyramid so the caller's image is not resized.
+	cv::Mat octaveImage = image.clone();
 	
 	float preSigma2 = 0;//orignal image is not blurred, has zero sigma;
 	float curSigma2 = 1.0;//[sqrt(2)]^0=1;
@@ -147,12 +151,12 @@ int LineDescriptor::OctaveKeyLines(cv::Mat & image, ScaleLines &keyLines)
 		 * increaseSigma^2 = curSigma^2 - preSigma^2 */
 		float increaseSigma = sqrt(curSigma2-preSigma2);
 		switch(ksize_){
-            case 3: cv::GaussianBlur(image, blur, cv::Size(3,3), increaseSigma); break;
-            case 5: cv::GaussianBlur(image, blur, cv::Size(5,5), increaseSigma); break;
-            case 7: cv::GaussianBlur(image, blur, cv::Size(7,7), increaseSigma); break;
-            case 9: cv::GaussianBlur(image, blur, cv::Size(9,9), increaseSigma); break;
-            case 11: cv::GaussianBlur(image, blur, cv::Size(11,11), increaseSigma); break;
-            default: cv::GaussianBlur(image, blur, cv::Size(5,5), increaseSigma); break;
+            case 3: cv::GaussianBlur(octaveImage, blur, cv::Size(3,3), increaseSigma); break;
+            case 5: cv::GaussianBlur(octaveImage, blur, cv::Size(5,5), increaseSigma); break;
+            case 7: cv::GaussianBlur(octaveImage, blur, cv::Size(7,7), increaseSigma); break;
+            case 9: cv::GaussianBlur(octaveImage, blur, cv::Size(9,9), increaseSigma); break;
+            case 11: cv::GaussianBlur(octaveImage, blur, cv::Size(11,11), increaseSigma); break;
+            default: cv::GaussianBlur(octaveImage, blur, cv::Size(5,5), increaseSigma); break;
 
 		}
 
@@ -165,9 +169,10 @@ int LineDescriptor::OctaveKeyLines(cv::Mat & image, ScaleLines &keyLines)
 
 		////////////////////////////////////
 		//down sample the current octave image to get the next octave image
-		image.create((int)(blur.rows/factor), (int)(blur.cols/factor), CV_8UC1);
-		
-		sampleUchar(blur.data,image.data, factor, blur.cols,  blur.rows);
+		if(octaveCount + 1 < numOfOctave_){
+			octaveImage.create((int)(blur.rows/factor), (int)(blur.cols/factor), CV_8UC1);
+			sampleUchar(blur.data, octaveImage.data, factor, blur.cols, blur.rows);
+		}
 		preSigma2 = curSigma2;
 		curSigma2 = curSigma2*2;
 	}
@@ -552,45 +557,46 @@ int LineDescriptor::ComputeLBD_(ScaleLines &keyLines)
 				desID = bandID * 8;
 				temp = pgdLBandSum[bandID] * invN;
 				desVec[desID]   = temp;//mean value of pgdL;
-				desVec[desID+4] = sqrt(pgdL2BandSum[bandID] * invN - temp*temp);//std value of pgdL;
+				desVec[desID+4] = sqrt(std::max(0.0f, pgdL2BandSum[bandID] * invN - temp*temp));//std value of pgdL;
 				temp = ngdLBandSum[bandID] * invN;
 				desVec[desID+1] = temp;//mean value of ngdL;
-				desVec[desID+5] = sqrt(ngdL2BandSum[bandID] * invN - temp*temp);//std value of ngdL;
+				desVec[desID+5] = sqrt(std::max(0.0f, ngdL2BandSum[bandID] * invN - temp*temp));//std value of ngdL;
 
 				temp = pgdOBandSum[bandID] * invN;
 				desVec[desID+2] = temp;//mean value of pgdO;
-				desVec[desID+6] = sqrt(pgdO2BandSum[bandID] * invN - temp*temp);//std value of pgdO;
+				desVec[desID+6] = sqrt(std::max(0.0f, pgdO2BandSum[bandID] * invN - temp*temp));//std value of pgdO;
 				temp = ngdOBandSum[bandID] * invN;
 				desVec[desID+3] = temp;//mean value of ngdO;
-				desVec[desID+7] = sqrt(ngdO2BandSum[bandID] * invN - temp*temp);//std value of ngdO;
+				desVec[desID+7] = sqrt(std::max(0.0f, ngdO2BandSum[bandID] * invN - temp*temp));//std value of ngdO;
 			}
 			//normalize;
-			float tempM, tempS;
-			tempM = 0;
-			tempS = 0;
+			float tempM = 0.0f;
+			float tempS = 0.0f;
+			const float eps = 1.0e-12f;
 			desVec = pSingleLine->descriptor.data();
 			for(short i=0; i<numOfBand_; i++){
-				tempM += (*desVec) * *(desVec++);//desVec[8*i+0] * desVec[8*i+0];
-				tempM += (*desVec) * *(desVec++);//desVec[8*i+1] * desVec[8*i+1];
-				tempM += (*desVec) * *(desVec++);//desVec[8*i+2] * desVec[8*i+2];
-				tempM += (*desVec) * *(desVec++);//desVec[8*i+3] * desVec[8*i+3];
-				tempS += (*desVec) * *(desVec++);//desVec[8*i+4] * desVec[8*i+4];
-				tempS += (*desVec) * *(desVec++);//desVec[8*i+5] * desVec[8*i+5];
-				tempS += (*desVec) * *(desVec++);//desVec[8*i+6] * desVec[8*i+6];
-				tempS += (*desVec) * *(desVec++);//desVec[8*i+7] * desVec[8*i+7];
+				const int id = 8*i;
+				tempM += desVec[id+0] * desVec[id+0];
+				tempM += desVec[id+1] * desVec[id+1];
+				tempM += desVec[id+2] * desVec[id+2];
+				tempM += desVec[id+3] * desVec[id+3];
+				tempS += desVec[id+4] * desVec[id+4];
+				tempS += desVec[id+5] * desVec[id+5];
+				tempS += desVec[id+6] * desVec[id+6];
+				tempS += desVec[id+7] * desVec[id+7];
 			}
-			tempM = 1/sqrt(tempM);
-			tempS = 1/sqrt(tempS);
-			desVec = pSingleLine->descriptor.data();
+			tempM = 1.0f/sqrt(std::max(tempM, eps));
+			tempS = 1.0f/sqrt(std::max(tempS, eps));
 			for(short i=0; i<numOfBand_; i++){
-				(*desVec) = *(desVec++) * tempM;//desVec[8*i] =  desVec[8*i] * tempM;
-				(*desVec) = *(desVec++) * tempM;//desVec[8*i+1] =  desVec[8*i+1] * tempM;
-				(*desVec) = *(desVec++) * tempM;//desVec[8*i+2] =  desVec[8*i+2] * tempM;
-				(*desVec) = *(desVec++) * tempM;//desVec[8*i+3] =  desVec[8*i+3] * tempM;
-				(*desVec) = *(desVec++) * tempS;//desVec[8*i+4] =  desVec[8*i+4] * tempS;
-				(*desVec) = *(desVec++) * tempS;//desVec[8*i+5] =  desVec[8*i+5] * tempS;
-				(*desVec) = *(desVec++) * tempS;//desVec[8*i+6] =  desVec[8*i+6] * tempS;
-				(*desVec) = *(desVec++) * tempS;//desVec[8*i+7] =  desVec[8*i+7] * tempS;
+				const int id = 8*i;
+				desVec[id+0] *= tempM;
+				desVec[id+1] *= tempM;
+				desVec[id+2] *= tempM;
+				desVec[id+3] *= tempM;
+				desVec[id+4] *= tempS;
+				desVec[id+5] *= tempS;
+				desVec[id+6] *= tempS;
+				desVec[id+7] *= tempS;
 			}
 			/*In order to reduce the influence of non-linear illumination,
 			 *a threshold is used to limit the value of element in the unit feature
@@ -607,7 +613,7 @@ int LineDescriptor::ComputeLBD_(ScaleLines &keyLines)
 			for(short i=0; i<descriptorSize; i++){
 				temp += desVec[i] * desVec[i];
 			}
-			temp = 1/sqrt(temp);
+			temp = 1.0f/sqrt(std::max(temp, 1.0e-12f));
 			for(short i=0; i<descriptorSize; i++){
 				desVec[i] =  desVec[i] * temp;
 			}
@@ -624,6 +630,8 @@ int LineDescriptor::ComputeLBD_(ScaleLines &keyLines)
 	delete [] ngdOBandSum;
 	delete [] pgdO2BandSum;
 	delete [] ngdO2BandSum;
+
+	return 1;
 }
 
 
@@ -631,80 +639,150 @@ int LineDescriptor::ComputeLBD_(ScaleLines &keyLines)
 int LineDescriptor::GetLineDescriptor(cv::Mat & image, ScaleLines & keyLines)
 {
     double t = (double)cv::getTickCount();
-    if(!OctaveKeyLines(image,keyLines)){
-        cout<<"OctaveKeyLines failed"<<endl;
+
+    int result = OctaveKeyLines(image, keyLines);
+    if(result < 0){
+        std::cerr << "OctaveKeyLines failed" << std::endl;
         return -1;
     }
+
     t = ((double)cv::getTickCount() - t)/cv::getTickFrequency();
-    std::cout<<"time line extraction: "<<t<<"s"<<std::endl;
-    
-//    t = (double)cv::getTickCount();
-//    ComputeLBD_(keyLines);
-//    t = ((double)cv::getTickCount() - t)/cv::getTickFrequency();
-//    std::cout<<"time descriptor extraction: "<<t<<"s"<<std::endl;
-//    
-    
-//    for(int j = 0; j<keyLines.size(); j++)
-//    {
-//        for(int k = 0; k<keyLines[j].size(); k++)
-//        {
-//            for(int i = 0; i<keyLines[j][k].descriptor.size(); i++)
-//                std::cout<<"keylines["<<j<<"]["<<k<<"].descriptor["<<i<<"]: "<<keyLines[j][k].descriptor[i]<<std::endl;
-//        }
-//    }
-    
+    std::cout << "time line extraction: " << t << "s" << std::endl;
+    std::cout << "Detected scale lines: " << keyLines.size() << std::endl;
+
+    if(keyLines.empty()){
+        std::cerr << "No lines detected." << std::endl;
+        return -1;
+    }
+
+    t = (double)cv::getTickCount();
+
+    result = ComputeLBD_(keyLines);
+    if(result < 0){
+        std::cerr << "ComputeLBD_ failed" << std::endl;
+        return -1;
+    }
+
+    t = ((double)cv::getTickCount() - t)/cv::getTickFrequency();
+    std::cout << "time descriptor extraction: " << t << "s" << std::endl;
+
+    if(keyLines[0].empty() || keyLines[0][0].descriptor.empty()){
+        std::cerr << "ERROR: LBD descriptors are empty." << std::endl;
+        return -1;
+    }
+
+    std::cout << "LBD descriptor dimension: "
+              << keyLines[0][0].descriptor.size()
+              << std::endl;
+
     return 1;
 }
 
+
 /*Match line by their descriptors.
  *The function will use opencv FlannBasedMatcher to mathc lines. */
-int LineDescriptor::MatchLineByDescriptor(ScaleLines &keyLinesLeft, 	ScaleLines &keyLinesRight,
-		std::vector<short> &matchLeft, std::vector<short> &matchRight,
-		int criteria)
+int LineDescriptor::MatchLineByDescriptor(
+        ScaleLines &keyLinesLeft,
+        ScaleLines &keyLinesRight,
+        std::vector<short> &matchLeft,
+        std::vector<short> &matchRight,
+        int criteria)
 {
-	int leftSize = keyLinesLeft.size();
-	int rightSize = keyLinesRight.size();
-	if(leftSize<1||rightSize<1){
-		return -1;
-	}
+    const int leftSize = static_cast<int>(keyLinesLeft.size());
+    const int rightSize = static_cast<int>(keyLinesRight.size());
 
-	matchLeft.clear();
-	matchRight.clear();
+    if(leftSize < 1 || rightSize < 1){
+        std::cerr << "ERROR: No lines to match." << std::endl;
+        return -1;
+    }
 
-	int desDim = keyLinesLeft[0][0].descriptor.size();
-	float *desL, *desR, *desMax, *desOld;
-	if(criteria==NearestNeighbor){
-		float minDis,dis,temp;
-		int corresId;
-		for(int idL=0; idL<leftSize; idL++){
-			short sameLineSize = keyLinesLeft[idL].size();
-			minDis = 100;
-			for(short lineIDInSameLines = 0; lineIDInSameLines<sameLineSize; lineIDInSameLines++){
-				desOld = keyLinesLeft[idL][lineIDInSameLines].descriptor.data();
-				for(int idR=0; idR<rightSize; idR++){
-					short sameLineSizeR = keyLinesRight[idR].size();
-					for(short lineIDInSameLinesR = 0; lineIDInSameLinesR<sameLineSizeR; lineIDInSameLinesR++){
-						desL = desOld;
-						desR = keyLinesRight[idR][lineIDInSameLinesR].descriptor.data();
-						desMax = desR+desDim;
-						dis = 0;
-						while(desR<desMax){
-							temp = *(desL++) - *(desR++);
-							dis += temp*temp;
-						}
-						dis = sqrt(dis);
-						if(dis<minDis){
-							minDis = dis;
-							corresId = idR;
-						}
-					}
-				}//end for(int idR=0; idR<rightSize; idR++)
-			}//end for(short lineIDInSameLines = 0; lineIDInSameLines<sameLineSize; lineIDInSameLines++)
-			if(minDis<LowestThreshold){
-				matchLeft.push_back(idL);
-				matchRight.push_back(corresId);
-			}
-		}// end for(int idL=0; idL<leftSize; idL++)
-	}
+    if(keyLinesLeft[0].empty() || keyLinesRight[0].empty()){
+        std::cerr << "ERROR: Empty ScaleLines." << std::endl;
+        return -1;
+    }
+
+    const int desDim =
+        static_cast<int>(keyLinesLeft[0][0].descriptor.size());
+
+    if(desDim <= 0){
+        std::cerr << "ERROR: descriptors are empty." << std::endl;
+        return -1;
+    }
+
+    if(criteria != NearestNeighbor){
+        std::cerr << "ERROR: Only NearestNeighbor is implemented."
+                  << std::endl;
+        return -1;
+    }
+
+    std::cout << "Matching descriptor dimension: "
+              << desDim
+              << std::endl;
+
+    matchLeft.clear();
+    matchRight.clear();
+
+    for(int idL = 0; idL < leftSize; ++idL){
+        float minDis = 100.0f;
+        int corresId = -1;
+
+        const int sameLineSize =
+            static_cast<int>(keyLinesLeft[idL].size());
+
+        for(int lineIDInSameLines = 0;
+            lineIDInSameLines < sameLineSize;
+            ++lineIDInSameLines)
+        {
+            const std::vector<float> &descriptorLeft =
+                keyLinesLeft[idL][lineIDInSameLines].descriptor;
+
+            if(static_cast<int>(descriptorLeft.size()) != desDim){
+                continue;
+            }
+
+            for(int idR = 0; idR < rightSize; ++idR){
+                const int sameLineSizeR =
+                    static_cast<int>(keyLinesRight[idR].size());
+
+                for(int lineIDInSameLinesR = 0;
+                    lineIDInSameLinesR < sameLineSizeR;
+                    ++lineIDInSameLinesR)
+                {
+                    const std::vector<float> &descriptorRight =
+                        keyLinesRight[idR][lineIDInSameLinesR].descriptor;
+
+                    if(static_cast<int>(descriptorRight.size()) != desDim){
+                        continue;
+                    }
+
+                    float disSquared = 0.0f;
+
+                    for(int k = 0; k < desDim; ++k){
+                        const float diff =
+                            descriptorLeft[k] - descriptorRight[k];
+                        disSquared += diff * diff;
+                    }
+
+                    const float dis = sqrt(disSquared);
+
+                    if(dis < minDis){
+                        minDis = dis;
+                        corresId = idR;
+                    }
+                }
+            }
+        }
+
+        if(corresId >= 0 && minDis < LowestThreshold){
+            matchLeft.push_back(static_cast<short>(idL));
+            matchRight.push_back(static_cast<short>(corresId));
+        }
+    }
+
+    std::cout << "Accepted matches: "
+              << matchLeft.size()
+              << std::endl;
+
+    return 1;
 }
 
